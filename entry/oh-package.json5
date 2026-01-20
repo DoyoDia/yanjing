@@ -1,0 +1,12 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "360 VR Panorama Viewer for HarmonyOS",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "libpanorama_renderer.so": "file:./src/main/cpp/types/libpanorama_renderer"
+  }
+}
+

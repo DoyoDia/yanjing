@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "label"
+    },
+    {
+      "name": "sensor_permission_reason",
+      "value": "用于追踪头部姿态，控制360度全景视野"
+    },
+    {
+      "name": "media_permission_reason",
+      "value": "用于读取和播放360度全景视频文件"
+    }
+  ]
+}
