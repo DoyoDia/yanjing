@@ -1,6 +1,6 @@
 /**
  * ExternalPanoramaView - 外部显示器（智能眼镜）专用全景渲染页面
- * 此页面将在智能眼镜上显示分屏双眼视图
+ * 此页面在智能眼镜上显示单画面视图
  */
 
 import { SensorManager, SensorDataListener, getSensorManager } from '../sensor/SensorManager';
@@ -72,8 +72,8 @@ struct ExternalPanoramaView {
     setTimeout(() => {
       if (panoramaRenderer.isInitialized()) {
         this.rendererReady = true;
-        // 外部显示器始终使用分屏模式
-        panoramaRenderer.setStereoMode(true);
+        // 外部显示器使用单画面模式
+        panoramaRenderer.setStereoMode(false);
         // 自动开始渲染
         this.startRendering();
         console.info('ExternalPanoramaView: Renderer ready, started rendering');

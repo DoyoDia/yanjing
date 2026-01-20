@@ -30,7 +30,6 @@ struct PanoramaView {
 
   // 渲染状态
   @State isRendering: boolean = false;
-  @State isStereoMode: boolean = true;
   @State rendererReady: boolean = false;
 
   // 视频状态
@@ -200,16 +199,6 @@ struct PanoramaView {
   }
 
   /**
-   * 切换分屏模式
-   */
-  private toggleStereoMode(): void {
-    this.isStereoMode = !this.isStereoMode;
-    if (this.rendererReady) {
-      panoramaRenderer.setStereoMode(this.isStereoMode);
-    }
-  }
-
-  /**
    * 选择视频文件
    */
   private async selectVideo(): Promise<void> {
@@ -279,7 +268,7 @@ struct PanoramaView {
     setTimeout(async () => {
       if (panoramaRenderer.isInitialized()) {
         this.rendererReady = true;
-        panoramaRenderer.setStereoMode(this.isStereoMode);
+        panoramaRenderer.setStereoMode(false);
         
         // 获取 SurfaceId 并设置给视频播放器
         const surfaceId = panoramaRenderer.getSurfaceId();
@@ -431,16 +420,8 @@ struct PanoramaView {
           .width('90%')
           .margin({ bottom: 8 })
 
-          // 控制按钮第二行（显示模式）
+          // 控制按钮第二行（渲染控制）
           Row() {
-            Button(this.isStereoMode ? '🥽 分屏' : '📱 单屏')
-              .fontSize(13)
-              .height(40)
-              .layoutWeight(1)
-              .backgroundColor('rgba(156, 39, 176, 0.8)')
-              .margin({ right: 8 })
-              .onClick(() => this.toggleStereoMode())
-
             Button(this.isRendering ? '⏹ 停止渲染' : '▶ 开始渲染')
               .fontSize(13)
               .height(40)
