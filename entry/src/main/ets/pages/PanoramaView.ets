@@ -32,6 +32,12 @@ struct PanoramaView {
   @State isRendering: boolean = false;
   @State rendererReady: boolean = false;
 
+  // FOV 设置
+  private readonly fovMin: number = 60;
+  private readonly fovMax: number = 110;
+  private readonly fovStep: number = 1;
+  @State fovValue: number = 90;
+
   // 视频状态
   @State videoState: string = 'idle';
   @State videoProgress: number = 0;
@@ -269,6 +275,7 @@ struct PanoramaView {
       if (panoramaRenderer.isInitialized()) {
         this.rendererReady = true;
         panoramaRenderer.setStereoMode(false);
+        this.applyFov();
         
         // 获取 SurfaceId 并设置给视频播放器
         const surfaceId = panoramaRenderer.getSurfaceId();
@@ -293,6 +300,16 @@ struct PanoramaView {
     console.info('PanoramaView: XComponent destroyed');
     this.rendererReady = false;
     this.stopRendering();
+  }
+
+  /**
+   * 应用当前 FOV
+   */
+  private applyFov(): void {
+    const fov = this.fovValue;
+    if (this.rendererReady) {
+      panoramaRenderer.setFOV(fov);
+    }
   }
 
   /**
@@ -434,6 +451,28 @@ struct PanoramaView {
                 } else {
                   this.startRendering();
                 }
+              })
+          }
+          .width('90%')
+          .margin({ bottom: 8 })
+
+          // FOV 滑块
+          Column() {
+            Text(`🔭 FOV ${this.fovValue}°`)
+              .fontSize(12)
+              .fontColor('#B0BEC5')
+              .margin({ bottom: 6 })
+
+            Slider({
+              value: this.fovValue,
+              min: this.fovMin,
+              max: this.fovMax,
+              step: this.fovStep
+            })
+              .width('90%')
+              .onChange((value: number) => {
+                this.fovValue = Math.round(value);
+                this.applyFov();
               })
           }
           .width('90%')

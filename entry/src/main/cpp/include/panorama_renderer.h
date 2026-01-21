@@ -67,6 +67,12 @@ public:
     void SetIPD(float ipd);
 
     /**
+     * 设置视场角（FOV）
+     * @param fov 视场角，单位：度
+     */
+    void SetFOV(float fov);
+
+    /**
      * 渲染一帧
      */
     void Render();

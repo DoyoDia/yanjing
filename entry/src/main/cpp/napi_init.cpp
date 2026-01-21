@@ -116,6 +116,31 @@ static napi_value SetIPD(napi_env env, napi_callback_info info) {
     return nullptr;
 }
 
+/**
+ * 导出方法：设置视场角（FOV）
+ * 参数：number (度)
+ */
+static napi_value SetFOV(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    if (argc < 1) {
+        return nullptr;
+    }
+
+    double fov;
+    napi_get_value_double(env, args[0], &fov);
+
+    PanoramaRenderer* renderer = PluginManager::GetInstance().GetRenderer(g_xcomponentId);
+    if (renderer) {
+        renderer->SetFOV(static_cast<float>(fov));
+        LOGI("FOV set to: %.2f deg", fov);
+    }
+
+    return nullptr;
+}
+
 // SetTexture deleted
 
 /**
@@ -184,6 +209,7 @@ static napi_value Export(napi_env env, napi_value exports) {
         {"setViewMatrix", nullptr, SetViewMatrix, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setStereoMode", nullptr, SetStereoMode, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setIPD", nullptr, SetIPD, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setFOV", nullptr, SetFOV, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"isInitialized", nullptr, IsInitialized, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getSurfaceId", nullptr, GetSurfaceId, nullptr, nullptr, nullptr, napi_default, nullptr},
     };

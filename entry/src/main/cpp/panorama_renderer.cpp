@@ -382,6 +382,22 @@ void PanoramaRenderer::SetIPD(float ipd) {
     m_ipd = ipd;
 }
 
+void PanoramaRenderer::SetFOV(float fov) {
+    // 限制 FOV 范围，避免畸变或矩阵异常
+    if (fov < 30.0f) {
+        fov = 30.0f;
+    } else if (fov > 140.0f) {
+        fov = 140.0f;
+    }
+
+    m_fov = fov;
+
+    // 重新计算投影矩阵
+    if (m_viewportWidth > 0 && m_viewportHeight > 0) {
+        SetViewport(m_viewportWidth, m_viewportHeight);
+    }
+}
+
 void PanoramaRenderer::Render() {
     if (!m_initialized) return;
     

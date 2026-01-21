@@ -25,6 +25,12 @@ export const setStereoMode: (enabled: boolean) => void;
  */
 export const setIPD: (ipd: number) => void;
 
+/**
+ * 设置视场角（FOV）
+ * @param fov 视场角，单位：度
+ */
+export const setFOV: (fov: number) => void;
+
 // setTexture removed
 
 /**
