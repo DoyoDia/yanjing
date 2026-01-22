@@ -57,9 +57,8 @@ out vec4 fragColor;
 
 void main() {
     // 翻转 Y 坐标 (视频通常是倒置的或坐标系差异)
-    // vec2 texCoord = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
-    // 这里暂时不做翻转，视情况而定
-    fragColor = texture(uTexture, vTexCoord);
+    vec2 texCoord = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
+    fragColor = texture(uTexture, texCoord);
 }
 )";
 

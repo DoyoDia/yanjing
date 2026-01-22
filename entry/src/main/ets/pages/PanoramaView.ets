@@ -38,6 +38,15 @@ struct PanoramaView {
   private readonly fovStep: number = 1;
   @State fovValue: number = 90;
 
+  // 触控拖动视角
+  private isTouching: boolean = false;
+  private lastTouchX: number = 0;
+  private lastTouchY: number = 0;
+  private dragYaw: number = 0;   // 弧度
+  private dragPitch: number = 0; // 弧度
+  private readonly dragSensitivity: number = 0.003;
+  private readonly maxPitch: number = Math.PI / 2 - 0.01;
+
   // 视频状态
   @State videoState: string = 'idle';
   @State videoProgress: number = 0;
@@ -69,7 +78,8 @@ struct PanoramaView {
     // 创建传感器监听器
     this.sensorListener = new SensorListenerImpl((quaternion: Quaternion, viewMatrix: Matrix4) => {
       if (this.rendererReady) {
-        panoramaRenderer.setViewMatrix(viewMatrix.toFloat32Array());
+        const adjustedMatrix = this.applyDragToViewMatrix(viewMatrix);
+        panoramaRenderer.setViewMatrix(adjustedMatrix.toFloat32Array());
       }
     });
 
@@ -313,6 +323,60 @@ struct PanoramaView {
   }
 
   /**
+   * 将触控拖动叠加到传感器视图矩阵
+   */
+  private applyDragToViewMatrix(viewMatrix: Matrix4): Matrix4 {
+    if (this.dragYaw === 0 && this.dragPitch === 0) {
+      return viewMatrix;
+    }
+
+    const dragQuaternion = new Quaternion().setFromEulerZYX(this.dragYaw, this.dragPitch, 0);
+    dragQuaternion.conjugate();
+
+    const dragMatrix = new Matrix4().setFromQuaternion(dragQuaternion);
+    return new Matrix4().multiplyMatrices(dragMatrix, viewMatrix);
+  }
+
+  /**
+   * 触控拖动处理
+   */
+  private handleTouch(event: TouchEvent): void {
+    if (event.touches.length === 0) {
+      return;
+    }
+
+    const touch = event.touches[0];
+
+    if (event.type === TouchType.Down) {
+      this.isTouching = true;
+      this.lastTouchX = touch.x;
+      this.lastTouchY = touch.y;
+      return;
+    }
+
+    if (event.type === TouchType.Move && this.isTouching) {
+      const dx = touch.x - this.lastTouchX;
+      const dy = touch.y - this.lastTouchY;
+      this.lastTouchX = touch.x;
+      this.lastTouchY = touch.y;
+
+      this.dragYaw += dx * this.dragSensitivity;
+      this.dragPitch += dy * this.dragSensitivity;
+
+      if (this.dragPitch > this.maxPitch) {
+        this.dragPitch = this.maxPitch;
+      } else if (this.dragPitch < -this.maxPitch) {
+        this.dragPitch = -this.maxPitch;
+      }
+      return;
+    }
+
+    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.isTouching = false;
+    }
+  }
+
+  /**
    * 格式化时间显示
    */
   private formatTime(ms: number): string {
@@ -333,6 +397,7 @@ struct PanoramaView {
       })
         .onLoad(() => this.onXComponentLoad())
         .onDestroy(() => this.onXComponentDestroy())
+        .onTouch((event: TouchEvent) => this.handleTouch(event))
         .width('100%')
         .height('100%')
 
