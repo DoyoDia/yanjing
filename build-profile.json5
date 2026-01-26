@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\tianl\\.ohos\\config\\default_yanjing-main_Ofn8_vhQAR11vekpMN_wXJkKClUG43aqFjJZwVi0G6E=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001ACDD736ECF9E7845D70C698BEECAA6831E463E288BDF73BF137CE8B2875B489FB2CEE4685C627",
+          "profile": "C:\\Users\\tianl\\.ohos\\config\\default_yanjing-main_Ofn8_vhQAR11vekpMN_wXJkKClUG43aqFjJZwVi0G6E=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\tianl\\.ohos\\config\\default_yanjing-main_Ofn8_vhQAR11vekpMN_wXJkKClUG43aqFjJZwVi0G6E=.p12",
+          "storePassword": "0000001ACAF36CDF5CC6AC5453A12CD263D2B942991461AD5F8A4E8E276FB6F03B3B748E0145E08B8223"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",

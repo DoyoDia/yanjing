@@ -35,6 +35,16 @@ interface UsbInterfaces {
   cmdInterface: USBInterface;
 }
 
+class TargetDevice {
+  vid: number;
+  pid: number;
+
+  constructor(vid: number, pid: number) {
+    this.vid = vid;
+    this.pid = pid;
+  }
+}
+
 export class GlassesImuManager {
   private static instance: GlassesImuManager | null = null;
 
@@ -67,12 +77,12 @@ export class GlassesImuManager {
   private readonly cmdPacketSize: number = 24;
   private readonly scanIntervalMs: number = 1000;
 
-  private readonly targetDevices: Array<{ vid: number; pid: number }> = [
-    { vid: 0x0483, pid: 0x5741 },
-    { vid: 0x4817, pid: 0x4242 },
-    { vid: 0x4817, pid: 0x5742 },
-    { vid: 0x17EF, pid: 0xB816 },
-    { vid: 0x17EF, pid: 0x5743 }
+  private readonly targetDevices: TargetDevice[] = [
+    new TargetDevice(0x0483, 0x5741),
+    new TargetDevice(0x4817, 0x4242),
+    new TargetDevice(0x4817, 0x5742),
+    new TargetDevice(0x17EF, 0xB816),
+    new TargetDevice(0x17EF, 0x5743)
   ];
 
   private constructor() {}
@@ -102,7 +112,12 @@ export class GlassesImuManager {
   }
 
   public getState(): GlassesConnectionState {
-    return { ...this.state };
+    return {
+      connected: this.state.connected,
+      hasPermission: this.state.hasPermission,
+      streaming: this.state.streaming,
+      deviceInfo: this.state.deviceInfo
+    };
   }
 
   public startMonitoring(): void {
@@ -187,7 +202,7 @@ export class GlassesImuManager {
   private async refreshPermission(device: USBDevice): Promise<void> {
     const hasPermission = await this.ensurePermission(device);
     if (hasPermission && !this.state.hasPermission) {
-      this.state = { ...this.state, hasPermission: true };
+      this.state.hasPermission = true;
       this.notifyConnectionChanged();
       if (this.wantStreaming) {
         void this.startStreaming();
@@ -243,7 +258,7 @@ export class GlassesImuManager {
 
     this.releaseInterface(this.pipe, this.cmdInterface);
 
-    this.state = { ...this.state, streaming: true };
+    this.state.streaming = true;
     this.notifyConnectionChanged();
     this.startReadLoop();
   }
@@ -270,7 +285,7 @@ export class GlassesImuManager {
     this.sequenceNumber = 0;
 
     if (this.state.streaming) {
-      this.state = { ...this.state, streaming: false };
+      this.state.streaming = false;
       this.notifyConnectionChanged();
     }
   }
@@ -324,7 +339,7 @@ export class GlassesImuManager {
     }
     this.readTimerId = setTimeout(() => {
       void this.readLoop();
-    }, 10) as unknown as number;
+    }, 10);
   }
 
   private async setImuReportDataType(type: number): Promise<boolean> {
@@ -436,15 +451,15 @@ export class GlassesImuManager {
   }
 
   private getVendorId(device: USBDevice): number {
-    return (device.vendorId as number) ?? (device.vendorID as number) ?? 0;
+    return device.vendorId;
   }
 
   private getProductId(device: USBDevice): number {
-    return (device.productId as number) ?? (device.productID as number) ?? 0;
+    return device.productId;
   }
 
   private getDeviceDisplayName(device: USBDevice, vid: number, pid: number): string {
-    const name = (device as unknown as { productName?: string }).productName ?? device.name ?? '';
+    const name = device.name ?? '';
     if (name && name.length > 0) {
       return name;
     }
