@@ -20,5 +20,10 @@
       "name": "media_permission_reason",
       "value": "用于读取和播放360度全景视频文件"
     }
+    ,
+    {
+      "name": "usb_permission_reason",
+      "value": "Used to access glasses USB IMU"
+    }
   ]
 }

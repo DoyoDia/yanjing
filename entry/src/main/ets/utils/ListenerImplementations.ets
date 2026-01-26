@@ -5,6 +5,7 @@
 
 import { Quaternion, Matrix4 } from './MathUtils';
 import { SensorDataListener } from '../sensor/SensorManager';
+import { GlassesImuListener, GlassesConnectionState } from '../sensor/GlassesImuManager';
 import { ExternalDisplayListener, DisplayInfo, DisplayType } from '../display/ExternalDisplayManager';
 import { VideoFrameListener, VideoPlayerState } from '../video/VideoPlayerManager';
 import { image } from '@kit.ImageKit';
@@ -83,5 +84,36 @@ export class VideoFrameListenerImpl implements VideoFrameListener {
 
   onProgressUpdate(currentTime: number, duration: number): void {
     this.onProgress(currentTime, duration);
+  }
+}
+
+/**
+ * 眼镜 IMU 监听器实现类
+ */
+export class GlassesImuListenerImpl implements GlassesImuListener {
+  private onConnection: (state: GlassesConnectionState) => void;
+  private onQuaternion: (quaternion: Quaternion) => void;
+  private onErrorCallback: (message: string, code?: number) => void;
+
+  constructor(
+    onConnection: (state: GlassesConnectionState) => void,
+    onQuaternion: (quaternion: Quaternion) => void,
+    onErrorCallback: (message: string, code?: number) => void
+  ) {
+    this.onConnection = onConnection;
+    this.onQuaternion = onQuaternion;
+    this.onErrorCallback = onErrorCallback;
+  }
+
+  onConnectionChanged(state: GlassesConnectionState): void {
+    this.onConnection(state);
+  }
+
+  onImuQuaternion(quaternion: Quaternion): void {
+    this.onQuaternion(quaternion);
+  }
+
+  onError(message: string, code?: number): void {
+    this.onErrorCallback(message, code);
   }
 }

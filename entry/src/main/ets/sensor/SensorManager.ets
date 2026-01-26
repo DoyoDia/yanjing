@@ -214,7 +214,21 @@ export class SensorManager {
   private onSensorData(data: sensor.RotationVectorResponse): void {
     // 鸿蒙旋转矢量传感器返回的四元数格式: (x, y, z, w)
     // 注意：某些平台可能返回 (w, x, y, z)，需要根据实际情况调整
-    this.deviceQuaternion.set(data.x, data.y, data.z, data.w);
+    this.applyQuaternion(data.x, data.y, data.z, data.w);
+  }
+
+  /**
+   * ?? IMU ?????
+   */
+  public updateFromQuaternion(quaternion: Quaternion): void {
+    this.applyQuaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+  }
+
+  /**
+   * ????????????
+   */
+  private applyQuaternion(x: number, y: number, z: number, w: number): void {
+    this.deviceQuaternion.set(x, y, z, w);
     this.deviceQuaternion.normalize();
 
     // 计算 OpenGL 视图矩阵
@@ -223,6 +237,7 @@ export class SensorManager {
     // 通知所有监听器
     this.notifyListeners();
   }
+
 
   /**
    * 计算 OpenGL 视图矩阵

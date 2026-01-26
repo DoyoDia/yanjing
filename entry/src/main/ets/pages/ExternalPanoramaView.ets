@@ -4,8 +4,9 @@
  */
 
 import { SensorManager, SensorDataListener, getSensorManager } from '../sensor/SensorManager';
+import { GlassesImuManager, GlassesConnectionState, getGlassesImuManager } from '../sensor/GlassesImuManager';
 import { Quaternion, Matrix4 } from '../utils/MathUtils';
-import { SensorListenerImpl } from '../utils/ListenerImplementations';
+import { SensorListenerImpl, GlassesImuListenerImpl } from '../utils/ListenerImplementations';
 import panoramaRenderer from 'libpanorama_renderer.so';
 
 @Entry
@@ -16,6 +17,10 @@ struct ExternalPanoramaView {
 
   // 传感器管理器
   private sensorManager: SensorManager = getSensorManager();
+  private glassesManager: GlassesImuManager = getGlassesImuManager();
+
+  // 眼镜 IMU 状态
+  private glassesConnected: boolean = false;
 
   // 渲染状态
   @State rendererReady: boolean = false;
@@ -26,6 +31,7 @@ struct ExternalPanoramaView {
 
   // 传感器监听器
   private sensorListener: SensorListenerImpl | null = null;
+  private glassesListener: GlassesImuListenerImpl | null = null;
 
   aboutToAppear(): void {
     // 创建传感器监听器
@@ -35,8 +41,36 @@ struct ExternalPanoramaView {
       }
     });
 
+    // Glasses IMU listener
+    this.glassesListener = new GlassesImuListenerImpl(
+      (state: GlassesConnectionState) => {
+        this.glassesConnected = state.connected && state.hasPermission;
+        if (this.isRendering) {
+          if (this.glassesConnected) {
+            this.sensorManager.stop();
+            this.glassesManager.startImu();
+          } else {
+            this.glassesManager.stopImu();
+            this.sensorManager.start();
+          }
+        }
+      },
+      (quaternion: Quaternion) => {
+        this.sensorManager.updateFromQuaternion(quaternion);
+      },
+      (message: string) => {
+        console.error('ExternalPanoramaView: Glasses IMU error', message);
+      }
+    );
+
+
     // 添加传感器监听器
     this.sensorManager.addListener(this.sensorListener);
+    if (this.glassesListener) {
+      this.glassesManager.addListener(this.glassesListener);
+    }
+
+    this.glassesManager.initialize();
   }
 
   aboutToDisappear(): void {
@@ -44,12 +78,22 @@ struct ExternalPanoramaView {
     if (this.sensorListener) {
       this.sensorManager.removeListener(this.sensorListener);
     }
+    if (this.glassesListener) {
+      this.glassesManager.removeListener(this.glassesListener);
+    }
+    this.glassesManager.stopImu();
+    this.glassesManager.stopMonitoring();
   }
 
   private startRendering(): void {
     if (this.isRendering) return;
 
     this.isRendering = true;
+    if (this.glassesConnected) {
+      this.glassesManager.startImu();
+    } else {
+      this.sensorManager.start();
+    }
 
     // 使用 setInterval 替代 requestAnimationFrame（约60fps）
     this.renderTimerId = setInterval(() => {
@@ -64,6 +108,8 @@ struct ExternalPanoramaView {
       clearInterval(this.renderTimerId);
       this.renderTimerId = -1;
     }
+    this.glassesManager.stopImu();
+    this.sensorManager.stop();
   }
 
   private onXComponentLoad(): void {

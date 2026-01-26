@@ -5,8 +5,9 @@
  */
 
 import { SensorManager, SensorDataListener, DeviceHoldMode, getSensorManager } from '../sensor/SensorManager';
+import { GlassesImuManager, GlassesConnectionState, getGlassesImuManager } from '../sensor/GlassesImuManager';
 import { Quaternion, Matrix4 } from '../utils/MathUtils';
-import { SensorListenerImpl, ExternalDisplayListenerImpl, VideoFrameListenerImpl } from '../utils/ListenerImplementations';
+import { SensorListenerImpl, ExternalDisplayListenerImpl, VideoFrameListenerImpl, GlassesImuListenerImpl } from '../utils/ListenerImplementations';
 import { VideoPlayerManager, VideoPlayerState, VideoFrameListener, getVideoPlayerManager } from '../video/VideoPlayerManager';
 import { ExternalDisplayManager, DisplayInfo, ExternalDisplayListener, DisplayType, getExternalDisplayManager } from '../display/ExternalDisplayManager';
 import { common } from '@kit.AbilityKit';
@@ -24,6 +25,7 @@ struct PanoramaView {
   private sensorManager: SensorManager = getSensorManager();
   private videoManager: VideoPlayerManager = getVideoPlayerManager();
   private displayManager: ExternalDisplayManager = getExternalDisplayManager();
+  private glassesManager: GlassesImuManager = getGlassesImuManager();
 
   // 上下文
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
@@ -58,6 +60,11 @@ struct PanoramaView {
   @State externalDisplayInfo: string = '未连接';
   @State isOutputToExternal: boolean = false;
 
+  // 眼镜 IMU 状态
+  @State glassesConnected: boolean = false;
+  @State glassesStreaming: boolean = false;
+  @State glassesName: string = '未知设备';
+
   // 渲染循环定时器 ID
   private renderTimerId: number = -1;
 
@@ -70,6 +77,7 @@ struct PanoramaView {
   private sensorListener: SensorListenerImpl | null = null;
   private displayListener: ExternalDisplayListenerImpl | null = null;
   private videoListener: VideoFrameListenerImpl | null = null;
+  private glassesListener: GlassesImuListenerImpl | null = null;
 
   /**
    * 页面即将出现
@@ -119,6 +127,32 @@ struct PanoramaView {
       }
     );
 
+    // Glasses IMU listener
+    this.glassesListener = new GlassesImuListenerImpl(
+      (state: GlassesConnectionState) => {
+        this.glassesConnected = state.connected && state.hasPermission;
+        this.glassesStreaming = state.streaming;
+        this.glassesName = state.deviceInfo ? state.deviceInfo.name : 'Unknown';
+
+        if (this.isRendering) {
+          if (state.connected && state.hasPermission) {
+            this.sensorManager.stop();
+            this.glassesManager.startImu();
+          } else {
+            this.glassesManager.stopImu();
+            this.sensorManager.start();
+          }
+        }
+      },
+      (quaternion: Quaternion) => {
+        this.sensorManager.updateFromQuaternion(quaternion);
+      },
+      (message: string) => {
+        console.error('PanoramaView: Glasses IMU error', message);
+      }
+    );
+
+
     // 配置传感器
     this.sensorManager.configure({
       samplingInterval: 16666667,
@@ -129,10 +163,15 @@ struct PanoramaView {
     this.sensorManager.addListener(this.sensorListener);
     this.displayManager.addListener(this.displayListener);
     this.videoManager.addListener(this.videoListener);
+    if (this.glassesListener) {
+      this.glassesManager.addListener(this.glassesListener);
+    }
 
     // 设置上下文
     this.videoManager.setContext(this.context);
     this.displayManager.setContext(this.context);
+
+    this.glassesManager.initialize();
 
     // 初始化管理器
     this.initializeManagers();
@@ -153,6 +192,11 @@ struct PanoramaView {
     if (this.videoListener) {
       this.videoManager.removeListener(this.videoListener);
     }
+    if (this.glassesListener) {
+      this.glassesManager.removeListener(this.glassesListener);
+    }
+    this.glassesManager.stopImu();
+    this.glassesManager.stopMonitoring();
     this.displayManager.closeExternalWindow();
   }
 
@@ -182,7 +226,11 @@ struct PanoramaView {
     if (this.isRendering) return;
 
     this.isRendering = true;
-    this.sensorManager.start();
+    if (this.glassesConnected) {
+      this.glassesManager.startImu();
+    } else {
+      this.sensorManager.start();
+    }
     this.lastFpsTime = Date.now();
     this.frameCount = 0;
 
@@ -211,6 +259,7 @@ struct PanoramaView {
       clearInterval(this.renderTimerId);
       this.renderTimerId = -1;
     }
+    this.glassesManager.stopImu();
     this.sensorManager.stop();
   }
 
@@ -423,13 +472,16 @@ struct PanoramaView {
           Blank()
 
           // 外部显示器状态
+          // Glasses IMU status
           Row() {
-            Text(this.hasExternalDisplay ? '🥽' : '📱')
-              .fontSize(14)
-            Text(this.hasExternalDisplay ? '眼镜已连接' : '未连接眼镜')
+            Circle()
+              .width(10)
+              .height(10)
+              .fill(this.glassesConnected ? (this.glassesStreaming ? '#4CAF50' : '#FFC107') : '#757575')
+            Text(this.glassesConnected ? `${this.glassesName} IMU` : 'IMU Disconnected')
               .fontSize(12)
-              .fontColor(this.hasExternalDisplay ? '#4CAF50' : '#757575')
-              .margin({ left: 4 })
+              .fontColor(this.glassesConnected ? '#4CAF50' : '#757575')
+              .margin({ left: 6 })
           }
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .backgroundColor('rgba(0, 0, 0, 0.6)')

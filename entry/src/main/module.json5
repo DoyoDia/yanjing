@@ -31,6 +31,14 @@
           "abilities": ["EntryAbility"],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.USB_HOST",
+        "reason": "$string:usb_permission_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
       }
     ],
     "deliveryWithInstall": true,
