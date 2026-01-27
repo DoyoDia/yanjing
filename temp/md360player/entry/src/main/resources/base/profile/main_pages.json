@@ -1,0 +1,6 @@
+{
+  "src": [
+    "pages/DemoPage",
+    "pages/VideoPlayerPage"
+  ]
+}

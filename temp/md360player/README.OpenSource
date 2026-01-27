@@ -1,0 +1,11 @@
+[
+    {
+        "Name": "md360player",
+        "License": "Apache-2.0 License",
+        "License File": " LICENSE ",
+        "Version Number": "1.0.0-rc.0",
+        "Owner" : "xiafeng@huawei.com",
+        "Upstream URL": "https://github.com/ashqal/MD360Player4Android",
+        "Description": "It is a lite library to render 360 degree panorama video."
+    }
+]

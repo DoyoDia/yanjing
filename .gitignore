@@ -10,3 +10,16 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+
+/temp/d360player/node_modules
+/temp/d360player/oh_modules
+/temp/d360player/local.properties
+/temp/d360player/.idea
+**/build
+/temp/d360player/.hvigor
+/temp/d360player/.cxx
+/temp/d360player/.clangd
+/temp/d360player/.clang-format
+/temp/d360player/.clang-tidy
+**/.test
+/temp/d360player/.appanalyzer

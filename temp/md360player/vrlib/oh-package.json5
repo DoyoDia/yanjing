@@ -1,0 +1,12 @@
+{
+  "name": "@ohos/md360player",
+  "version": "1.0.0-rc.0",
+  "description": "It is a lite library to render 360 degree panorama video.",
+  "main": "Index.ets",
+  "author": "ohos_tpc",
+  "repository": "https://gitee.com/openharmony-tpc-incubate/md360player",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "libmd360player.so": "file:./src/main/cpp/types/libmd360player"
+  }
+}
