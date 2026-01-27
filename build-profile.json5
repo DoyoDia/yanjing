@@ -51,6 +51,10 @@
           ]
         }
       ]
+    },
+    {
+      "name": "vrlib",
+      "srcPath": "./vrlib"
     }
   ]
 }

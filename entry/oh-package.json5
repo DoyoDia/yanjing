@@ -6,7 +6,7 @@
   "author": "",
   "license": "",
   "dependencies": {
-    "libpanorama_renderer.so": "file:./src/main/cpp/types/libpanorama_renderer"
+    "@ohos/md360player": "file:../vrlib"
   }
 }
 

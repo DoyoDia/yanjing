@@ -2,6 +2,7 @@
   "modelVersion": "6.0.0",
   "description": "Please describe the basic information.",
   "dependencies": {
+    "@ohos/md360player": "file:./vrlib"
   },
   "devDependencies": {
     "@ohos/hypium": "1.0.24",

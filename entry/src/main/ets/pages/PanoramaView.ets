@@ -2,18 +2,152 @@
  * PanoramaView - 全景渲染视图页面（主控制页面）
  * 使用 XComponent 承载 OpenGL ES 渲染的 360° 全景
  * 支持视频播放和外部显示器输出
+ * 使用 md360player 库进行全景视频渲染
  */
 
 import { SensorManager, SensorDataListener, DeviceHoldMode, getSensorManager } from '../sensor/SensorManager';
 import { GlassesImuManager, GlassesConnectionState, getGlassesImuManager } from '../sensor/GlassesImuManager';
 import { Quaternion, Matrix4 } from '../utils/MathUtils';
-import { SensorListenerImpl, ExternalDisplayListenerImpl, VideoFrameListenerImpl, GlassesImuListenerImpl } from '../utils/ListenerImplementations';
-import { VideoPlayerManager, VideoPlayerState, VideoFrameListener, getVideoPlayerManager } from '../video/VideoPlayerManager';
+import { SensorListenerImpl, ExternalDisplayListenerImpl, GlassesImuListenerImpl } from '../utils/ListenerImplementations';
 import { ExternalDisplayManager, DisplayInfo, ExternalDisplayListener, DisplayType, getExternalDisplayManager } from '../display/ExternalDisplayManager';
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
-import { image } from '@kit.ImageKit';
-import panoramaRenderer from 'libpanorama_renderer.so';
+import { MDVRLibrary, IOnSurfaceReadyCallback, Context } from '@ohos/md360player';
+import { media } from '@kit.MediaKit';
+
+/**
+ * 视频播放回调实现类
+ * 实现 IOnSurfaceReadyCallback 接口，用于 md360player 库
+ */
+class VideoCallback implements IOnSurfaceReadyCallback {
+  private avPlayer: media.AVPlayer | null = null;
+  private videoUri: string = '';
+  private surfaceId: string | null = null;
+  private progressTimer: number | null = null;
+  private onStateChanged: ((isPlaying: boolean) => void) | null = null;
+  private onProgressChanged: ((currentTime: number, duration: number) => void) | null = null;
+
+  setStateCallback(onStateChanged: (isPlaying: boolean) => void, 
+                   onProgressChanged: (currentTime: number, duration: number) => void): void {
+    this.onStateChanged = onStateChanged;
+    this.onProgressChanged = onProgressChanged;
+  }
+
+  onSurfaceReady(surface: Object): void {
+    console.log('VideoCallback: Surface ready');
+  }
+
+  async setSurfaceIdAndCreatePlayer(surfaceId: string): Promise<void> {
+    if (!surfaceId || surfaceId === '0' || surfaceId === '') {
+      console.error('VideoCallback: Invalid surfaceId:', surfaceId);
+      return;
+    }
+
+    if (this.surfaceId === surfaceId) {
+      console.log('VideoCallback: surfaceId already set:', surfaceId);
+      return;
+    }
+
+    this.surfaceId = surfaceId;
+    console.log('VideoCallback: Creating AVPlayer with surfaceId:', surfaceId);
+
+    try {
+      if (this.avPlayer !== null) {
+        await this.avPlayer.release();
+        this.avPlayer = null;
+      }
+
+      this.avPlayer = await media.createAVPlayer();
+      if (this.avPlayer === null) {
+        console.error('VideoCallback: Failed to create AVPlayer');
+        return;
+      }
+
+      this.avPlayer.surfaceId = surfaceId;
+
+      this.avPlayer.on('stateChange', (state: string) => {
+        console.log('VideoCallback: AVPlayer state changed to:', state);
+        if (state === 'playing') {
+          this.onStateChanged?.(true);
+          this.startProgressTimer();
+        } else if (state === 'paused' || state === 'stopped') {
+          this.onStateChanged?.(false);
+          this.stopProgressTimer();
+        }
+      });
+
+      if (this.videoUri) {
+        this.avPlayer.url = this.videoUri;
+      }
+
+      console.log('VideoCallback: AVPlayer created successfully');
+    } catch (error) {
+      console.error('VideoCallback: Failed to create AVPlayer:', error);
+    }
+  }
+
+  async setSource(uri: string): Promise<void> {
+    this.videoUri = uri;
+    if (this.avPlayer) {
+      try {
+        await this.avPlayer.reset();
+        this.avPlayer.url = uri;
+      } catch (error) {
+        console.error('VideoCallback: Failed to set source:', error);
+      }
+    }
+  }
+
+  async play(): Promise<void> {
+    if (this.avPlayer && (this.avPlayer.state === 'prepared' || this.avPlayer.state === 'paused')) {
+      try {
+        await this.avPlayer.play();
+      } catch (error) {
+        console.error('VideoCallback: Failed to play:', error);
+      }
+    }
+  }
+
+  async pause(): Promise<void> {
+    if (this.avPlayer && this.avPlayer.state === 'playing') {
+      try {
+        await this.avPlayer.pause();
+      } catch (error) {
+        console.error('VideoCallback: Failed to pause:', error);
+      }
+    }
+  }
+
+  isPlaying(): boolean {
+    return this.avPlayer?.state === 'playing';
+  }
+
+  private startProgressTimer(): void {
+    this.stopProgressTimer();
+    this.progressTimer = setInterval(() => {
+      if (this.avPlayer && this.avPlayer.state === 'playing') {
+        const currentTime = this.avPlayer.currentTime || 0;
+        const duration = this.avPlayer.duration || 0;
+        this.onProgressChanged?.(currentTime, duration);
+      }
+    }, 500);
+  }
+
+  private stopProgressTimer(): void {
+    if (this.progressTimer !== null) {
+      clearInterval(this.progressTimer);
+      this.progressTimer = null;
+    }
+  }
+
+  release(): void {
+    this.stopProgressTimer();
+    if (this.avPlayer) {
+      this.avPlayer.release();
+      this.avPlayer = null;
+    }
+  }
+}
 
 @Entry
 @Component
@@ -23,9 +157,13 @@ struct PanoramaView {
 
   // 管理器实例
   private sensorManager: SensorManager = getSensorManager();
-  private videoManager: VideoPlayerManager = getVideoPlayerManager();
   private displayManager: ExternalDisplayManager = getExternalDisplayManager();
   private glassesManager: GlassesImuManager = getGlassesImuManager();
+
+  // md360player 相关
+  private vrLibrary: MDVRLibrary | null = null;
+  private vrContext: Context | null = null;
+  private videoCallback: VideoCallback | null = null;
 
   // 上下文
   private context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
@@ -40,17 +178,8 @@ struct PanoramaView {
   private readonly fovStep: number = 1;
   @State fovValue: number = 90;
 
-  // 触控拖动视角
-  private isTouching: boolean = false;
-  private lastTouchX: number = 0;
-  private lastTouchY: number = 0;
-  private dragYaw: number = 0;   // 弧度
-  private dragPitch: number = 0; // 弧度
-  private readonly dragSensitivity: number = 0.003;
-  private readonly maxPitch: number = Math.PI / 2 - 0.01;
-
   // 视频状态
-  @State videoState: string = 'idle';
+  @State isPlaying: boolean = false;
   @State videoProgress: number = 0;
   @State videoDuration: number = 0;
   @State videoFileName: string = '未选择视频';
@@ -65,18 +194,18 @@ struct PanoramaView {
   @State glassesStreaming: boolean = false;
   @State glassesName: string = '未知设备';
 
-  // 渲染循环定时器 ID
-  private renderTimerId: number = -1;
-
   // 帧率统计
   @State fps: number = 0;
   private frameCount: number = 0;
   private lastFpsTime: number = 0;
 
+  // 触控手势
+  private lastPanX: number | undefined = undefined;
+  private lastPanY: number | undefined = undefined;
+
   // 监听器实例
   private sensorListener: SensorListenerImpl | null = null;
   private displayListener: ExternalDisplayListenerImpl | null = null;
-  private videoListener: VideoFrameListenerImpl | null = null;
   private glassesListener: GlassesImuListenerImpl | null = null;
 
   /**
@@ -85,9 +214,11 @@ struct PanoramaView {
   aboutToAppear(): void {
     // 创建传感器监听器
     this.sensorListener = new SensorListenerImpl((quaternion: Quaternion, viewMatrix: Matrix4) => {
-      if (this.rendererReady) {
-        const adjustedMatrix = this.applyDragToViewMatrix(viewMatrix);
-        panoramaRenderer.setViewMatrix(adjustedMatrix.toFloat32Array());
+      if (this.vrLibrary && this.rendererReady) {
+        // 将传感器数据传递给 md360player
+        // md360player 使用四元数 (x, y, z, w) 进行视角控制
+        const quat = quaternion.toArray();
+        this.vrLibrary.updateGyroData(quat[0], quat[1], quat[2], quat[3]);
       }
     });
 
@@ -110,20 +241,6 @@ struct PanoramaView {
         if (displayInfo.type === DisplayType.EXTERNAL) {
           this.externalDisplayInfo = `${displayInfo.name} (${displayInfo.width}x${displayInfo.height})`;
         }
-      }
-    );
-
-    // 创建视频播放监听器
-    this.videoListener = new VideoFrameListenerImpl(
-      (pixelMap: image.PixelMap, width: number, height: number) => {
-        // 帧数据可用时的处理
-      },
-      (state: VideoPlayerState) => {
-        this.videoState = state;
-      },
-      (currentTime: number, duration: number) => {
-        this.videoProgress = currentTime;
-        this.videoDuration = duration;
       }
     );
 
@@ -152,7 +269,6 @@ struct PanoramaView {
       }
     );
 
-
     // 配置传感器
     this.sensorManager.configure({
       samplingInterval: 16666667,
@@ -162,13 +278,11 @@ struct PanoramaView {
     // 添加监听器
     this.sensorManager.addListener(this.sensorListener);
     this.displayManager.addListener(this.displayListener);
-    this.videoManager.addListener(this.videoListener);
     if (this.glassesListener) {
       this.glassesManager.addListener(this.glassesListener);
     }
 
     // 设置上下文
-    this.videoManager.setContext(this.context);
     this.displayManager.setContext(this.context);
 
     this.glassesManager.initialize();
@@ -183,21 +297,30 @@ struct PanoramaView {
   aboutToDisappear(): void {
     this.stopRendering();
     this.sensorManager.stop();
+    
     if (this.sensorListener) {
       this.sensorManager.removeListener(this.sensorListener);
     }
     if (this.displayListener) {
       this.displayManager.removeListener(this.displayListener);
     }
-    if (this.videoListener) {
-      this.videoManager.removeListener(this.videoListener);
-    }
     if (this.glassesListener) {
       this.glassesManager.removeListener(this.glassesListener);
     }
+    
     this.glassesManager.stopImu();
     this.glassesManager.stopMonitoring();
     this.displayManager.closeExternalWindow();
+    
+    // 释放 md360player 资源
+    if (this.videoCallback) {
+      this.videoCallback.release();
+      this.videoCallback = null;
+    }
+    if (this.vrLibrary) {
+      this.vrLibrary.onDestroy();
+      this.vrLibrary = null;
+    }
   }
 
   /**
@@ -214,9 +337,57 @@ struct PanoramaView {
         this.externalDisplayInfo = `${extDisplay.name} (${extDisplay.width}x${extDisplay.height})`;
       }
     }
+  }
 
-    // 初始化视频播放器
-    await this.videoManager.initialize();
+  /**
+   * 初始化 VR 库
+   */
+  private async initVR(surfaceId: string): Promise<void> {
+    console.info('PanoramaView: Initializing VR with surfaceId:', surfaceId);
+
+    // 创建视频回调
+    this.videoCallback = new VideoCallback();
+    this.videoCallback.setStateCallback(
+      (isPlaying: boolean) => {
+        this.isPlaying = isPlaying;
+      },
+      (currentTime: number, duration: number) => {
+        this.videoProgress = currentTime;
+        this.videoDuration = duration;
+      }
+    );
+
+    // 创建 VR Context
+    this.vrContext = new Context();
+
+    // 构建 MDVRLibrary
+    const builder = MDVRLibrary.with(this.vrContext)
+      .displayMode(MDVRLibrary.DISPLAY_MODE_NORMAL)
+      .interactiveMode(MDVRLibrary.INTERACTIVE_MODE_MOTION_WITH_TOUCH)
+      .asVideo(this.videoCallback);
+
+    this.vrLibrary = builder.build(this.xComponentController);
+
+    // 通知 Surface 就绪
+    this.vrLibrary.onSurfaceReady(surfaceId);
+
+    // 获取视频 Surface ID 并创建播放器
+    setTimeout(async () => {
+      if (!this.vrLibrary || !this.videoCallback) {
+        return;
+      }
+
+      const videoSurfaceId = this.vrLibrary.getVideoSurfaceId();
+      console.info('PanoramaView: Got video surfaceId:', videoSurfaceId);
+
+      if (videoSurfaceId && videoSurfaceId !== '' && videoSurfaceId !== '0') {
+        await this.videoCallback.setSurfaceIdAndCreatePlayer(videoSurfaceId);
+        this.rendererReady = true;
+        console.info('PanoramaView: Renderer ready');
+      } else {
+        console.error('PanoramaView: Invalid video surfaceId');
+      }
+    }, 500);
   }
 
   /**
@@ -233,21 +404,6 @@ struct PanoramaView {
     }
     this.lastFpsTime = Date.now();
     this.frameCount = 0;
-
-    // 使用 setInterval 替代 requestAnimationFrame（约60fps）
-    this.renderTimerId = setInterval(() => {
-      if (!this.isRendering || !this.rendererReady) return;
-
-      panoramaRenderer.render();
-
-      this.frameCount++;
-      const now = Date.now();
-      if (now - this.lastFpsTime >= 1000) {
-        this.fps = this.frameCount;
-        this.frameCount = 0;
-        this.lastFpsTime = now;
-      }
-    }, 16);
   }
 
   /**
@@ -255,10 +411,6 @@ struct PanoramaView {
    */
   private stopRendering(): void {
     this.isRendering = false;
-    if (this.renderTimerId !== -1) {
-      clearInterval(this.renderTimerId);
-      this.renderTimerId = -1;
-    }
     this.glassesManager.stopImu();
     this.sensorManager.stop();
   }
@@ -280,7 +432,9 @@ struct PanoramaView {
         const parts = videoUri.split('/');
         this.videoFileName = parts[parts.length - 1] || '视频文件';
 
-        await this.videoManager.setSource(videoUri);
+        if (this.videoCallback) {
+          await this.videoCallback.setSource(videoUri);
+        }
         console.info('PanoramaView: Video selected', videoUri);
       }
     } catch (error) {
@@ -292,11 +446,14 @@ struct PanoramaView {
    * 播放/暂停视频
    */
   private async toggleVideoPlayback(): Promise<void> {
-    const state = this.videoManager.getState();
-    if (state === VideoPlayerState.PLAYING) {
-      await this.videoManager.pause();
+    if (!this.videoCallback) {
+      return;
+    }
+
+    if (this.videoCallback.isPlaying()) {
+      await this.videoCallback.pause();
     } else {
-      await this.videoManager.play();
+      await this.videoCallback.play();
     }
   }
 
@@ -327,29 +484,11 @@ struct PanoramaView {
   /**
    * XComponent 加载完成回调
    */
-  private onXComponentLoad(): void {
+  private async onXComponentLoad(): Promise<void> {
     console.info('PanoramaView: XComponent loaded');
 
-    setTimeout(async () => {
-      if (panoramaRenderer.isInitialized()) {
-        this.rendererReady = true;
-        panoramaRenderer.setStereoMode(false);
-        this.applyFov();
-        
-        // 获取 SurfaceId 并设置给视频播放器
-        const surfaceId = panoramaRenderer.getSurfaceId();
-        if (surfaceId && surfaceId.length > 0) {
-          await this.videoManager.setSurfaceId(surfaceId);
-          console.info(`PanoramaView: SurfaceId bound to player: ${surfaceId}`);
-        } else {
-          console.error('PanoramaView: Failed to get SurfaceId from renderer');
-        }
-
-        console.info('PanoramaView: Renderer ready');
-      } else {
-        console.error('PanoramaView: Renderer failed to initialize');
-      }
-    }, 100);
+    const surfaceId = this.xComponentController.getXComponentSurfaceId();
+    await this.initVR(surfaceId);
   }
 
   /**
@@ -365,64 +504,8 @@ struct PanoramaView {
    * 应用当前 FOV
    */
   private applyFov(): void {
-    const fov = this.fovValue;
-    if (this.rendererReady) {
-      panoramaRenderer.setFOV(fov);
-    }
-  }
-
-  /**
-   * 将触控拖动叠加到传感器视图矩阵
-   */
-  private applyDragToViewMatrix(viewMatrix: Matrix4): Matrix4 {
-    if (this.dragYaw === 0 && this.dragPitch === 0) {
-      return viewMatrix;
-    }
-
-    const dragQuaternion = new Quaternion().setFromEulerZYX(this.dragYaw, this.dragPitch, 0);
-    dragQuaternion.conjugate();
-
-    const dragMatrix = new Matrix4().setFromQuaternion(dragQuaternion);
-    return new Matrix4().multiplyMatrices(dragMatrix, viewMatrix);
-  }
-
-  /**
-   * 触控拖动处理
-   */
-  private handleTouch(event: TouchEvent): void {
-    if (event.touches.length === 0) {
-      return;
-    }
-
-    const touch = event.touches[0];
-
-    if (event.type === TouchType.Down) {
-      this.isTouching = true;
-      this.lastTouchX = touch.x;
-      this.lastTouchY = touch.y;
-      return;
-    }
-
-    if (event.type === TouchType.Move && this.isTouching) {
-      const dx = touch.x - this.lastTouchX;
-      const dy = touch.y - this.lastTouchY;
-      this.lastTouchX = touch.x;
-      this.lastTouchY = touch.y;
-
-      this.dragYaw += dx * this.dragSensitivity;
-      this.dragPitch += dy * this.dragSensitivity;
-
-      if (this.dragPitch > this.maxPitch) {
-        this.dragPitch = this.maxPitch;
-      } else if (this.dragPitch < -this.maxPitch) {
-        this.dragPitch = -this.maxPitch;
-      }
-      return;
-    }
-
-    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-      this.isTouching = false;
-    }
+    // md360player 的 FOV 控制由内部处理，这里保留接口以备后续扩展
+    console.info('PanoramaView: FOV set to', this.fovValue);
   }
 
   /**
@@ -441,14 +524,33 @@ struct PanoramaView {
       XComponent({
         id: 'panoramaXComponent',
         type: XComponentType.SURFACE,
-        libraryname: 'panorama_renderer',
+        libraryname: 'md360player',
         controller: this.xComponentController
       })
         .onLoad(() => this.onXComponentLoad())
         .onDestroy(() => this.onXComponentDestroy())
-        .onTouch((event: TouchEvent) => this.handleTouch(event))
         .width('100%')
         .height('100%')
+        .gesture(
+          PanGesture({ fingers: 1, direction: PanDirection.All, distance: 1 })
+            .onActionStart((event: GestureEvent) => {
+              this.lastPanX = event.offsetX;
+              this.lastPanY = event.offsetY;
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              if (this.lastPanX !== undefined && this.lastPanY !== undefined && this.vrLibrary) {
+                const distanceX = event.offsetX - this.lastPanX;
+                const distanceY = event.offsetY - this.lastPanY;
+                this.vrLibrary.onDrag(distanceX, distanceY);
+                this.lastPanX = event.offsetX;
+                this.lastPanY = event.offsetY;
+              }
+            })
+            .onActionEnd(() => {
+              this.lastPanX = undefined;
+              this.lastPanY = undefined;
+            })
+        )
 
       // 控制面板
       Column() {
@@ -543,11 +645,11 @@ struct PanoramaView {
               .margin({ right: 8 })
               .onClick(() => this.selectVideo())
 
-            Button(this.videoState === VideoPlayerState.PLAYING ? '⏸ 暂停' : '▶ 播放')
+            Button(this.isPlaying ? '⏸ 暂停' : '▶ 播放')
               .fontSize(13)
               .height(40)
               .layoutWeight(1)
-              .backgroundColor(this.videoState === VideoPlayerState.PLAYING ?
+              .backgroundColor(this.isPlaying ?
                 'rgba(255, 152, 0, 0.8)' : 'rgba(76, 175, 80, 0.8)')
               .onClick(() => this.toggleVideoPlayback())
           }
