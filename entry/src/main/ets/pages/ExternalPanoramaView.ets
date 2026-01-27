@@ -1,13 +1,15 @@
 /**
  * ExternalPanoramaView - 外部显示器（智能眼镜）专用全景渲染页面
  * 此页面在智能眼镜上显示单画面视图
+ * 使用 md360player 库进行渲染
  */
 
 import { SensorManager, SensorDataListener, getSensorManager } from '../sensor/SensorManager';
 import { GlassesImuManager, GlassesConnectionState, getGlassesImuManager } from '../sensor/GlassesImuManager';
 import { Quaternion, Matrix4 } from '../utils/MathUtils';
 import { SensorListenerImpl, GlassesImuListenerImpl } from '../utils/ListenerImplementations';
-import panoramaRenderer from 'libpanorama_renderer.so';
+import { MDVRLibrary, IOnSurfaceReadyCallback, Context } from '@ohos/md360player';
+import { media } from '@kit.MediaKit';
 
 @Entry
 @Component
@@ -19,15 +21,16 @@ struct ExternalPanoramaView {
   private sensorManager: SensorManager = getSensorManager();
   private glassesManager: GlassesImuManager = getGlassesImuManager();
 
+  // md360player 核心对象
+  private vrLibrary: MDVRLibrary | null = null;
+  private vrContext: Context | null = null;
+
   // 眼镜 IMU 状态
   private glassesConnected: boolean = false;
 
   // 渲染状态
   @State rendererReady: boolean = false;
   @State isRendering: boolean = false;
-
-  // 渲染循环定时器 ID
-  private renderTimerId: number = -1;
 
   // 传感器监听器
   private sensorListener: SensorListenerImpl | null = null;
@@ -36,9 +39,7 @@ struct ExternalPanoramaView {
   aboutToAppear(): void {
     // 创建传感器监听器
     this.sensorListener = new SensorListenerImpl((quaternion: Quaternion, viewMatrix: Matrix4) => {
-      if (this.rendererReady) {
-        panoramaRenderer.setViewMatrix(viewMatrix.toFloat32Array());
-      }
+      // 传感器数据由 md360player 内部处理
     });
 
     // Glasses IMU listener
@@ -83,6 +84,10 @@ struct ExternalPanoramaView {
     }
     this.glassesManager.stopImu();
     this.glassesManager.stopMonitoring();
+    
+    if (this.vrLibrary) {
+      this.vrLibrary.onDestroy();
+    }
   }
 
   private startRendering(): void {
@@ -94,37 +99,44 @@ struct ExternalPanoramaView {
     } else {
       this.sensorManager.start();
     }
-
-    // 使用 setInterval 替代 requestAnimationFrame（约60fps）
-    this.renderTimerId = setInterval(() => {
-      if (!this.isRendering || !this.rendererReady) return;
-      panoramaRenderer.render();
-    }, 16);
   }
 
   private stopRendering(): void {
     this.isRendering = false;
-    if (this.renderTimerId !== -1) {
-      clearInterval(this.renderTimerId);
-      this.renderTimerId = -1;
-    }
     this.glassesManager.stopImu();
     this.sensorManager.stop();
+  }
+
+  private async initVR(surfaceId: string): Promise<void> {
+    console.info('ExternalPanoramaView: Initializing VR with surfaceId:', surfaceId);
+    
+    // 创建 Context
+    this.vrContext = new Context();
+    
+    // 构建 MDVRLibrary (单画面模式)
+    let builder = MDVRLibrary.with(this.vrContext)
+      .displayMode(MDVRLibrary.DISPLAY_MODE_NORMAL)
+      .interactiveMode(MDVRLibrary.INTERACTIVE_MODE_MOTION);
+    
+    this.vrLibrary = builder.build(this.xComponentController);
+    
+    // 通知 Surface 准备就绪
+    this.vrLibrary.onSurfaceReady(surfaceId);
+    
+    this.rendererReady = true;
   }
 
   private onXComponentLoad(): void {
     console.info('ExternalPanoramaView: XComponent loaded');
 
-    setTimeout(() => {
-      if (panoramaRenderer.isInitialized()) {
-        this.rendererReady = true;
-        // 外部显示器使用单画面模式
-        panoramaRenderer.setStereoMode(false);
-        // 自动开始渲染
+    setTimeout(async () => {
+      const surfaceId = this.xComponentController.getXComponentSurfaceId();
+      if (surfaceId && surfaceId.length > 0) {
+        await this.initVR(surfaceId);
         this.startRendering();
-        console.info('ExternalPanoramaView: Renderer ready, started rendering');
+        console.info('ExternalPanoramaView: VR initialized and rendering started');
       } else {
-        console.error('ExternalPanoramaView: Renderer failed to initialize');
+        console.error('ExternalPanoramaView: Failed to get surfaceId');
       }
     }, 100);
   }
@@ -141,7 +153,7 @@ struct ExternalPanoramaView {
       XComponent({
         id: 'externalPanoramaXComponent',
         type: XComponentType.SURFACE,
-        libraryname: 'panorama_renderer',
+        libraryname: 'md360player',
         controller: this.xComponentController
       })
         .onLoad(() => this.onXComponentLoad())
