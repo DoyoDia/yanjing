@@ -1,9 +1,0 @@
-{
-  "module": {
-    "name": "vrlib",
-    "type": "har",
-    "deviceTypes": [
-      "default"
-    ]
-  }
-}
